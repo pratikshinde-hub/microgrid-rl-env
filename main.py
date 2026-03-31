@@ -101,10 +101,16 @@ def reset(req: ResetRequest):
     )
     
 @app.get("/reset", response_model=ResetResponse)
-def reset_get(task_id: str, seed: int = 42):
+def reset_get(task_id: Optional[str] = None, seed: int = 42):
     """
-    GET version of reset for compatibility with evaluation scripts.
+    GET version of reset.
+    - If task_id is not provided → default to a valid task
     """
+
+    # Default task if none provided
+    if task_id is None:
+        task_id = list(TASKS.keys())[0]   # first available task
+
     try:
         config = load_task(task_id)
     except ValueError as e:
