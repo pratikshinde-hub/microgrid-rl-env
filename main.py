@@ -99,6 +99,28 @@ def reset(req: ResetRequest):
         state=state,
         task_info=config.summary()
     )
+    
+@app.get("/reset", response_model=ResetResponse)
+def reset_get(task_id: str, seed: int = 42):
+    """
+    GET version of reset for compatibility with evaluation scripts.
+    """
+    try:
+        config = load_task(task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    env = MicrogridEnv(config)
+    state = env.reset(seed=seed)
+
+    session_id = f"{task_id}_{seed}_{uuid.uuid4().hex[:6]}"
+    env_store[session_id] = env
+
+    return ResetResponse(
+        session_id=session_id,
+        state=state,
+        task_info=config.summary()
+    )
 
 
 @app.post("/step", response_model=StepResponse)
