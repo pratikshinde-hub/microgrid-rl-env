@@ -1,75 +1,107 @@
 name: microgrid-rl-env
 version: "1.0.0"
+
 description: >
   A real-world microgrid energy management environment.
-  An agent controls a battery, curtails flexible loads, and manages
-  grid import/export to minimize cost and prevent blackouts.
+  The agent controls battery dispatch and flexible load curtailment
+  to minimize cost, avoid blackouts, and maximize renewable utilization.
 
-api_base: "https://<your-hf-username>-microgrid-rl-env.hf.space"
+api_base: "https://anirudhpatil-microgrid-rl-env.hf.space"
 
 endpoints:
   reset:
-    method: POST
+    methods: [GET, POST]
     path: /reset
-    body:
-      task_id: string
-      seed: integer
+
   step:
-    method: POST
+    methods: [GET, POST]
     path: /step
-    body:
-      session_id: string
-      action:
-        battery_kw: float
-        curtail_fraction: float
+
   state:
     method: GET
     path: /state/{session_id}
+
   tasks:
     method: GET
     path: /tasks
+
   grader:
-    method: POST
+    methods: [GET, POST]
     path: /grader
-    body:
-      session_id: string
+
   baseline:
-    method: POST
+    methods: [GET, POST]
     path: /baseline
-    body:
-      state: object
-      task_id: string
+
+  baseline_run:
+    method: GET
+    path: /baseline_run
+
+  health:
+    method: GET
+    path: /health
 
 tasks:
   - id: sunny_day
     difficulty: easy
     steps: 96
+    description: Stable solar generation and demand
+
   - id: volatile_market
     difficulty: medium
     steps: 96
+    description: Highly volatile electricity prices
+
   - id: islanded_crisis
     difficulty: hard
     steps: 96
+    description: Grid outage scenario with tight constraints
 
 action_space:
-  battery_kw:
-    type: float
-    range: [-max_charge_kw, max_charge_kw]
-  curtail_fraction:
-    type: float
-    range: [0.0, 1.0]
+  type: object
+  properties:
+    battery_kw:
+      type: float
+      min: -10.0
+      max: 10.0
+      description: Battery charge (+) / discharge (-)
+
+    curtail_fraction:
+      type: float
+      min: 0.0
+      max: 1.0
+      description: Fraction of flexible load deferred
+
+observation_space:
+  type: object
+  properties:
+    solar_kw: float
+    solar_forecast_kw: float
+    soc: float
+    battery_capacity_kwh: float
+    base_load_kw: float
+    flexible_load_kw: float
+    deferred_kwh: float
+    grid_available: boolean
+    spot_price: float
+    price_forecast: float
+    step: integer
+    total_steps: integer
 
 reward:
   type: dense
-  range: continuous
-  terminal: true
+  description: >
+    Composite reward balancing cost minimization, blackout avoidance,
+    renewable utilization, deferred load penalties, and battery constraints.
 
 grader:
   output_range: [0.0, 1.0]
   deterministic: true
   components:
-    - cost_score
-    - blackout_score
-    - self_consumption_score
-    - clearance_score
-    - health_score
+    - cost_efficiency
+    - blackout_avoidance
+    - solar_utilization
+    - load_clearance
+    - battery_health
+
+deterministic: true
