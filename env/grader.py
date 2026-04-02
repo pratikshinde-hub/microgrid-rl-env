@@ -91,11 +91,11 @@ def grade(trajectory: list[StepRecord], config: TaskConfig) -> GradeResult:
     return GradeResult(
         score=final,
         breakdown={
-            "cost_score": round(cost_score, 4),
-            "blackout_score": round(blackout_score, 4),
-            "self_consumption_score": round(self_consumption_score, 4),
-            "clearance_score": round(clearance_score, 4),
-            "health_score": round(health_score, 4),
+            "cost_efficiency": round(cost_score, 4),
+            "blackout_avoidance": round(blackout_score, 4),
+            "solar_utilization": round(self_consumption_score, 4),
+            "load_clearance": round(clearance_score, 4),
+            "battery_health": round(health_score, 4),
             "violation_penalty": round(violation_penalty, 4),
             "weighted_raw": round(raw, 4),
         }

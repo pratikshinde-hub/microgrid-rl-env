@@ -164,13 +164,7 @@ def health():
     First endpoint automated validators should call.
     """
     return {
-        "status": "ok",
-        "version": "1.0.0",
-        "tasks_loaded": list(TASKS.keys()),
-        "total_steps_per_episode": 96,
-        "dt_minutes": 15,
-        "active_sessions": len(env_store),
-        "max_sessions": MAX_SESSIONS,
+        "status": "ok"
     }
 
 

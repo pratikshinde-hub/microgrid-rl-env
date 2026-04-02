@@ -77,6 +77,8 @@ class MicrogridEnv:
         # ── Clamp action ─────────────────────────────────────────────
         battery_kw = _clamp(action.battery_kw, -cfg.max_charge_kw, cfg.max_charge_kw)
         curtail_frac = _clamp(action.curtail_fraction, 0.0, 1.0)
+        
+        is_clipped = (battery_kw != action.battery_kw) or (curtail_frac != action.curtail_fraction)
 
         # ── Current step values ───────────────────────────────────────
         solar_kw = float(self.solar_seq[t])
@@ -179,6 +181,7 @@ class MicrogridEnv:
                 "deferred_kwh": round(self.deferred_kwh, 4),
                 "soc": round(new_soc, 4),
                 "battery_kw_actual": round(actual_battery_kw, 3),
+                "clipped": is_clipped,
             }
         )
 
