@@ -103,18 +103,19 @@ def health():
 # ─────────────────────────────────────────────────────────
 
 @app.post("/reset", response_model=ResetResponse)
-def reset(req: ResetRequest):
+def reset(task_id: Optional[str] = None, seed: int = 42):
+
+    task_id = task_id or _default_task_id()
 
     try:
-        config = load_task(req.task_id)
+        config = load_task(task_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     env = MicrogridEnv(config)
-    state = env.reset(seed=req.seed)
+    state = env.reset(seed=seed)
 
-    session_id = f"{req.task_id}_{uuid.uuid4().hex[:6]}"
-
+    session_id = f"{task_id}_{seed}_{uuid.uuid4().hex[:6]}"
     _add_session(session_id, env)
 
     return ResetResponse(
@@ -128,13 +129,13 @@ def reset(req: ResetRequest):
 def reset_get(task_id: Optional[str] = None, seed: int = 42):
 
     task_id = task_id or _default_task_id()
+
     config = load_task(task_id)
 
     env = MicrogridEnv(config)
     state = env.reset(seed=seed)
 
-    session_id = f"{task_id}_{uuid.uuid4().hex[:6]}"
-
+    session_id = f"{task_id}_{seed}_{uuid.uuid4().hex[:6]}"
     _add_session(session_id, env)
 
     return ResetResponse(
