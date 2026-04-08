@@ -1,5 +1,6 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Dict, Any
+
 
 class MicrogridState(BaseModel):
     solar_kw: float
@@ -15,9 +16,11 @@ class MicrogridState(BaseModel):
     step: int
     total_steps: int
 
+
 class MicrogridAction(BaseModel):
     battery_kw: float       # positive = charge, negative = discharge
-    curtail_fraction: float # 0.0 to 1.0
+    curtail_fraction: float # 0.0 → 1.0
+
 
 class StepRecord(BaseModel):
     step: int
@@ -33,12 +36,14 @@ class StepRecord(BaseModel):
     spot_price: float
     battery_kw_actual: float
 
+
 class StepResult(BaseModel):
     state: MicrogridState
     reward: float
     done: bool
-    info: dict
+    info: Dict[str, Any]
+
 
 class GradeResult(BaseModel):
     score: float
-    breakdown: dict
+    breakdown: Dict[str, Any]
