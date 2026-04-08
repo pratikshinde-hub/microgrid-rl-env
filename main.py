@@ -44,12 +44,12 @@ def _default_task_id():
     return next(iter(TASKS.keys()))
 
 
-# ─────────────────────────────────────────────────────────
-# Request / Response Models
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# MODELS
+# ─────────────────────────────────────────────
 
 class ResetRequest(BaseModel):
-    task_id: str
+    task_id: Optional[str] = None   # ✅ FIXED
     seed: int = 42
 
 
@@ -85,9 +85,9 @@ class BaselineResponse(BaseModel):
     reasoning: str
 
 
-# ─────────────────────────────────────────────────────────
-# Health
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# HEALTH
+# ─────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -98,23 +98,26 @@ def health():
     }
 
 
-# ─────────────────────────────────────────────────────────
-# Reset
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# RESET (CRITICAL FIX)
+# ─────────────────────────────────────────────
 
 @app.post("/reset", response_model=ResetResponse)
-def reset(req: ResetRequest):
+def reset(req: ResetRequest | None = None):
+
+    # ✅ FIX: handle empty body
+    task_id = req.task_id if req and req.task_id else _default_task_id()
+    seed = req.seed if req else 42
 
     try:
-        config = load_task(req.task_id)
+        config = load_task(task_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     env = MicrogridEnv(config)
-    state = env.reset(seed=req.seed)
+    state = env.reset(seed=seed)
 
-    session_id = f"{req.task_id}_{uuid.uuid4().hex[:6]}"
-
+    session_id = f"{task_id}_{seed}_{uuid.uuid4().hex[:6]}"
     _add_session(session_id, env)
 
     return ResetResponse(
@@ -133,8 +136,7 @@ def reset_get(task_id: Optional[str] = None, seed: int = 42):
     env = MicrogridEnv(config)
     state = env.reset(seed=seed)
 
-    session_id = f"{task_id}_{uuid.uuid4().hex[:6]}"
-
+    session_id = f"{task_id}_{seed}_{uuid.uuid4().hex[:6]}"
     _add_session(session_id, env)
 
     return ResetResponse(
@@ -144,9 +146,9 @@ def reset_get(task_id: Optional[str] = None, seed: int = 42):
     )
 
 
-# ─────────────────────────────────────────────────────────
-# Step
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# STEP (SAFE)
+# ─────────────────────────────────────────────
 
 @app.post("/step", response_model=StepResponse)
 def step(req: StepRequest):
@@ -196,9 +198,9 @@ def step_get(
     )
 
 
-# ─────────────────────────────────────────────────────────
-# Grader
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# GRADER
+# ─────────────────────────────────────────────
 
 @app.post("/grader", response_model=GradeResult)
 def grader(req: GraderRequest):
@@ -212,7 +214,6 @@ def grader(req: GraderRequest):
         raise HTTPException(status_code=400, detail="Episode not complete")
 
     trajectory = env.get_trajectory()
-
     return grade(trajectory, env.config)
 
 
@@ -225,19 +226,17 @@ def grader_get(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
     trajectory = env.get_trajectory()
-
     return grade(trajectory, env.config)
 
 
-# ─────────────────────────────────────────────────────────
-# Baseline
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# BASELINE
+# ─────────────────────────────────────────────
 
 @app.post("/baseline", response_model=BaselineResponse)
 def baseline(req: BaselineRequest):
 
     config = load_task(req.task_id)
-
     agent = ThresholdHeuristicBaseline()
 
     action, reasoning = agent.act_with_reason(req.state, config)
@@ -252,7 +251,6 @@ def baseline(req: BaselineRequest):
 def baseline_get(task_id: Optional[str] = None):
 
     task_id = task_id or _default_task_id()
-
     config = load_task(task_id)
 
     agent = ThresholdHeuristicBaseline()
