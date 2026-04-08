@@ -14,8 +14,13 @@ dependencies = [
     "pydantic",
     "numpy",
     "requests",
-    "openai"
+    "openai",
+    "openenv-core>=0.2.0"
 ]
+
+# 🔥 THIS IS CRITICAL (you were missing this)
+[project.scripts]
+server = "server.app:app"
 
 [build-system]
 requires = ["setuptools", "wheel"]
