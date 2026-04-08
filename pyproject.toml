@@ -1,0 +1,22 @@
+[project]
+name = "microgrid-rl-env"
+version = "1.0.0"
+description = "OpenEnv Microgrid RL Environment"
+authors = [
+    { name = "Anirudh Patil" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "numpy",
+    "requests",
+    "openai"
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
