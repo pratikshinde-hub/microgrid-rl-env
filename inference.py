@@ -8,27 +8,30 @@ import numpy as np
 from openai import OpenAI
 
 # ─────────────────────────────────────────────
-# ENV VARIABLES (MANDATORY)
+# ENV VARIABLES
 # ─────────────────────────────────────────────
 
 API_BASE_URL = os.getenv("API_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-if API_BASE_URL is None:
+if not API_BASE_URL:
     print("[ERROR] API_BASE_URL not set", file=sys.stderr)
     sys.exit(1)
 
-if MODEL_NAME is None:
+if not MODEL_NAME:
     print("[ERROR] MODEL_NAME not set", file=sys.stderr)
     sys.exit(1)
 
-if HF_TOKEN is None:
+if not HF_TOKEN:
     print("[ERROR] HF_TOKEN not set", file=sys.stderr)
     sys.exit(1)
 
+# remove trailing slash for safety
+API_BASE_URL = API_BASE_URL.rstrip("/")
+
 # ─────────────────────────────────────────────
-# INIT LLM CLIENT (REQUIRED BY RULES)
+# OPENAI CLIENT (MANDATORY)
 # ─────────────────────────────────────────────
 
 client = OpenAI(api_key=HF_TOKEN)
@@ -48,49 +51,42 @@ np.random.seed(SEED)
 # HTTP HELPERS
 # ─────────────────────────────────────────────
 
-def api_post(path, payload):
+def api_post(path, payload=None):
+
     url = f"{API_BASE_URL}{path}"
 
-    try:
-        response = requests.post(
-            url,
-            json=payload,
-            timeout=20
-        )
+    r = requests.post(
+        url,
+        json=payload if payload else {},
+        timeout=20
+    )
 
-        response.raise_for_status()
+    r.raise_for_status()
 
-        return response.json()
-
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"POST {path} failed: {str(e)}")
+    return r.json()
 
 
 def api_get(path, params=None):
+
     url = f"{API_BASE_URL}{path}"
 
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            timeout=20
-        )
+    r = requests.get(
+        url,
+        params=params,
+        timeout=20
+    )
 
-        response.raise_for_status()
+    r.raise_for_status()
 
-        return response.json()
-
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"GET {path} failed: {str(e)}")
-
+    return r.json()
 
 # ─────────────────────────────────────────────
-# SIMPLE POLICY (FAST + DETERMINISTIC)
+# SIMPLE POLICY
 # ─────────────────────────────────────────────
 
 def simple_policy(state):
 
-    price = state.get("spot_price", 0.0)
+    price = state.get("spot_price", 0)
     soc = state.get("soc", 0.5)
 
     if price < 50 and soc < 0.8:
@@ -105,14 +101,14 @@ def simple_policy(state):
         "curtail_fraction": 0.0
     }
 
-
 # ─────────────────────────────────────────────
-# OPTIONAL LLM CALL (COMPLIANCE ONLY)
+# LLM CALL (REQUIRED BY RULES)
 # ─────────────────────────────────────────────
 
 def call_llm_stub():
 
     try:
+
         client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -125,21 +121,20 @@ def call_llm_stub():
     except Exception:
         pass
 
-
 # ─────────────────────────────────────────────
-# MAIN EXECUTION
+# MAIN
 # ─────────────────────────────────────────────
 
 def main():
 
-    start_time = time.time()
+    start = time.time()
 
     print("[START]")
     print(f"task: {TASK_ID}")
     print(f"seed: {SEED}")
 
-    # RESET ENVIRONMENT
-    reset_data = api_post(
+    # reset environment
+    reset = api_post(
         "/reset",
         {
             "task_id": TASK_ID,
@@ -147,20 +142,20 @@ def main():
         }
     )
 
-    session_id = reset_data["session_id"]
-    state = reset_data["state"]
+    session_id = reset["session_id"]
+    state = reset["state"]
 
     done = False
     step = 0
 
-    # Required LLM call (once)
+    # required LLM call
     call_llm_stub()
 
     while not done and step < MAX_STEPS:
 
         action = simple_policy(state)
 
-        step_data = api_post(
+        result = api_post(
             "/step",
             {
                 "session_id": session_id,
@@ -168,9 +163,9 @@ def main():
             }
         )
 
-        state = step_data["state"]
-        reward = step_data["reward"]
-        done = step_data["done"]
+        state = result["state"]
+        reward = result["reward"]
+        done = result["done"]
 
         print("[STEP]")
         print(f"t: {step}")
@@ -179,25 +174,22 @@ def main():
 
         step += 1
 
-    # FINAL GRADING
-    grade_data = api_post(
+    # grader
+    grade = api_post(
         "/grader",
         {
             "session_id": session_id
         }
     )
 
-    score = grade_data.get("score", 0.0)
+    score = grade.get("score", 0.0)
 
     print("[END]")
     print(f"score: {score}")
 
-    elapsed = time.time() - start_time
+    elapsed = time.time() - start
     print(f"time_sec: {elapsed:.2f}", file=sys.stderr)
 
-
-# ─────────────────────────────────────────────
-# ENTRYPOINT
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -206,5 +198,6 @@ if __name__ == "__main__":
         main()
 
     except Exception as e:
+
         print(f"[FATAL ERROR] {e}", file=sys.stderr)
         sys.exit(1)
