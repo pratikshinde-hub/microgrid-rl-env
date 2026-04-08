@@ -1,10 +1,10 @@
 import uuid
 import logging
 from collections import OrderedDict
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from env.microgrid import MicrogridEnv
 from env.models import MicrogridAction, GradeResult
@@ -12,14 +12,17 @@ from env.grader import grade
 from tasks import load_task, TASKS
 from baseline.heuristic import ThresholdHeuristicBaseline
 
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("microgrid")
+
 
 app = FastAPI(
     title="Microgrid RL Environment",
     description="OpenEnv compliant microgrid environment",
     version="1.0.0",
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 MAX_SESSIONS = 100
 env_store: OrderedDict[str, MicrogridEnv] = OrderedDict()
@@ -49,14 +53,14 @@ def _default_task_id():
 # ─────────────────────────────────────────────
 
 class ResetRequest(BaseModel):
-    task_id: Optional[str] = None   # ✅ FIXED
+    task_id: Optional[str] = None
     seed: int = 42
 
 
 class ResetResponse(BaseModel):
     session_id: str
-    state: dict
-    task_info: dict
+    state: Dict[str, Any]
+    task_info: Dict[str, Any]
 
 
 class StepRequest(BaseModel):
@@ -65,10 +69,10 @@ class StepRequest(BaseModel):
 
 
 class StepResponse(BaseModel):
-    state: dict
+    state: Dict[str, Any]
     reward: float
     done: bool
-    info: dict
+    info: Dict[str, Any]
 
 
 class GraderRequest(BaseModel):
@@ -76,7 +80,7 @@ class GraderRequest(BaseModel):
 
 
 class BaselineRequest(BaseModel):
-    state: dict
+    state: Dict[str, Any]
     task_id: str
 
 
@@ -99,15 +103,19 @@ def health():
 
 
 # ─────────────────────────────────────────────
-# RESET (CRITICAL FIX)
+# RESET (OPENENV VALIDATOR FIX)
 # ─────────────────────────────────────────────
 
 @app.post("/reset", response_model=ResetResponse)
-def reset(req: ResetRequest | None = None):
+def reset(body: Optional[dict] = Body(default=None)):
 
-    # ✅ FIX: handle empty body
-    task_id = req.task_id if req and req.task_id else _default_task_id()
-    seed = req.seed if req else 42
+    # allow POST with no body
+    if body is None:
+        task_id = _default_task_id()
+        seed = 42
+    else:
+        task_id = body.get("task_id", _default_task_id())
+        seed = body.get("seed", 42)
 
     try:
         config = load_task(task_id)
@@ -148,7 +156,7 @@ def reset_get(task_id: Optional[str] = None, seed: int = 42):
 
 
 # ─────────────────────────────────────────────
-# STEP (SAFE)
+# STEP
 # ─────────────────────────────────────────────
 
 @app.post("/step", response_model=StepResponse)
@@ -215,6 +223,7 @@ def grader(req: GraderRequest):
         raise HTTPException(status_code=400, detail="Episode not complete")
 
     trajectory = env.get_trajectory()
+
     return grade(trajectory, env.config)
 
 
@@ -227,6 +236,7 @@ def grader_get(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
     trajectory = env.get_trajectory()
+
     return grade(trajectory, env.config)
 
 
