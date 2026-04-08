@@ -1,11 +1,19 @@
 import numpy as np
 from env.dynamics import (
-    generate_solar, generate_load, generate_prices,
-    generate_grid_availability, update_soc
+    generate_solar,
+    generate_load,
+    generate_prices,
+    generate_grid_availability,
+    update_soc,
 )
+
 from env.models import (
-    MicrogridState, MicrogridAction, StepRecord, StepResult
+    MicrogridState,
+    MicrogridAction,
+    StepRecord,
+    StepResult,
 )
+
 from tasks.base import TaskConfig
 
 
@@ -16,24 +24,34 @@ def _clamp(v, lo, hi):
 class MicrogridEnv:
 
     def __init__(self, config: TaskConfig):
+
         self.config = config
         self.rng = None
+
         self.solar_seq = None
         self.load_seq = None
         self.price_seq = None
         self.grid_seq = None
+
         self.soc = 0.5
         self.deferred_kwh = 0.0
+
         self.current_step = 0
         self.done = False
+
         self.trajectory: list[StepRecord] = []
 
-    # ✅ FIXED reset signature + JSON return
+    # ─────────────────────────────────────────
+    # RESET
+    # ─────────────────────────────────────────
+
     def reset(self, seed=None, options=None):
+
         if seed is None:
             seed = 42
 
         self.rng = np.random.RandomState(seed)
+
         self.solar_seq = generate_solar(self.rng, self.config)
         self.load_seq = generate_load(self.rng, self.config)
         self.price_seq = generate_prices(self.rng, self.config)
@@ -41,15 +59,22 @@ class MicrogridEnv:
 
         self.soc = 0.5
         self.deferred_kwh = 0.0
+
         self.current_step = 0
         self.done = False
+
         self.trajectory = []
 
         state = self._build_state()
 
         return state.model_dump()
 
-    def _build_state(self) -> MicrogridState:
+    # ─────────────────────────────────────────
+    # BUILD STATE
+    # ─────────────────────────────────────────
+
+    def _build_state(self):
+
         t = self.current_step
         T = self.config.total_steps
 
@@ -77,22 +102,27 @@ class MicrogridEnv:
             total_steps=T,
         )
 
-    # ✅ Step still uses Pydantic internally but returns JSON
+    # ─────────────────────────────────────────
+    # STEP
+    # ─────────────────────────────────────────
+
     def step(self, action: MicrogridAction):
 
         if self.done:
-            raise RuntimeError("Episode is done. Call reset() first.")
+            raise RuntimeError("Episode finished. Call reset().")
 
         t = self.current_step
         cfg = self.config
         dt = 0.25
 
+        prev_state = self._build_state()
+
         battery_kw = _clamp(action.battery_kw, -cfg.max_charge_kw, cfg.max_charge_kw)
         curtail_frac = _clamp(action.curtail_fraction, 0.0, 1.0)
 
         is_clipped = (
-            battery_kw != action.battery_kw or
-            curtail_frac != action.curtail_fraction
+            battery_kw != action.battery_kw
+            or curtail_frac != action.curtail_fraction
         )
 
         solar_kw = float(self.solar_seq[t])
@@ -104,7 +134,7 @@ class MicrogridEnv:
         new_soc, actual_battery_kw = update_soc(self.soc, battery_kw, cfg, dt)
 
         deferred_added = flex_load * curtail_frac * dt
-        load_served_now = base_load + flex_load * (1.0 - curtail_frac)
+        load_served_now = base_load + flex_load * (1 - curtail_frac)
 
         self.deferred_kwh += deferred_added
 
@@ -112,18 +142,22 @@ class MicrogridEnv:
         surplus = net_gen - load_served_now
 
         if surplus > 0 and self.deferred_kwh > 0:
+
             cleared = min(surplus * dt, self.deferred_kwh)
+
             self.deferred_kwh -= cleared
-            surplus -= cleared / dt
 
         residual = solar_kw + (-actual_battery_kw) - load_served_now
 
         if grid_on:
+
             import_kw = max(0.0, -residual)
             export_kw = max(0.0, residual)
             unmet_kw = 0.0
             solar_curtailed_kw = 0.0
+
         else:
+
             import_kw = 0.0
             export_kw = 0.0
             unmet_kw = max(0.0, -residual)
@@ -138,7 +172,7 @@ class MicrogridEnv:
             price,
             new_soc,
             deferred_added,
-            solar_kw
+            solar_kw,
         )
 
         self.soc = new_soc
@@ -152,17 +186,15 @@ class MicrogridEnv:
         self.done = done
 
         next_state = (
-            self._build_state()
-            if not done
-            else self._build_terminal_state()
+            self._build_state() if not done else self._build_terminal_state()
         )
 
         record = StepRecord(
             step=t,
-            state=next_state,
+            state=prev_state,
             action=MicrogridAction(
                 battery_kw=actual_battery_kw,
-                curtail_fraction=curtail_frac
+                curtail_fraction=curtail_frac,
             ),
             reward=round(reward, 4),
             import_kw=round(import_kw, 3),
@@ -189,11 +221,14 @@ class MicrogridEnv:
                 "soc": round(new_soc, 4),
                 "battery_kw_actual": round(actual_battery_kw, 3),
                 "clipped": is_clipped,
-            }
+            },
         )
 
-        # ✅ Return JSON
         return result.model_dump()
+
+    # ─────────────────────────────────────────
+    # REWARD
+    # ─────────────────────────────────────────
 
     def _compute_reward(
         self,
@@ -229,6 +264,10 @@ class MicrogridEnv:
 
         return r_cost + r_blackout + r_solar + r_defer + r_soc
 
+    # ─────────────────────────────────────────
+    # TERMINAL STATE
+    # ─────────────────────────────────────────
+
     def _build_terminal_state(self):
 
         return MicrogridState(
@@ -245,6 +284,10 @@ class MicrogridEnv:
             step=self.config.total_steps,
             total_steps=self.config.total_steps,
         )
+
+    # ─────────────────────────────────────────
+    # TRAJECTORY
+    # ─────────────────────────────────────────
 
     def get_trajectory(self):
         return self.trajectory
