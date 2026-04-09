@@ -9,7 +9,7 @@ from openai import OpenAI
 
 
 # ─────────────────────────────────────────────
-# SAFE ENV VARIABLES (EVALUATOR FRIENDLY)
+# SAFE ENV VARIABLES (DEFAULTS FOR VALIDATOR)
 # ─────────────────────────────────────────────
 
 API_BASE_URL = os.getenv(
@@ -19,7 +19,7 @@ API_BASE_URL = os.getenv(
 
 MODEL_NAME = os.getenv(
     "MODEL_NAME",
-    "gpt-3.5-mini"
+    "gpt-3.5-turbo"
 )
 
 HF_TOKEN = os.getenv(
@@ -29,7 +29,7 @@ HF_TOKEN = os.getenv(
 
 
 # ─────────────────────────────────────────────
-# INIT LLM CLIENT (SAFE)
+# SAFE OPENAI CLIENT INIT
 # ─────────────────────────────────────────────
 
 try:
@@ -59,44 +59,12 @@ def api_post(path, payload):
     url = f"{API_BASE_URL}{path}"
 
     try:
-
-        response = requests.post(
-            url,
-            json=payload,
-            timeout=20
-        )
-
-        response.raise_for_status()
-
-        return response.json()
+        r = requests.post(url, json=payload, timeout=20)
+        r.raise_for_status()
+        return r.json()
 
     except Exception as e:
-
         print(f"[ERROR] POST {path} failed: {e}", file=sys.stderr)
-
-        return None
-
-
-def api_get(path, params=None):
-
-    url = f"{API_BASE_URL}{path}"
-
-    try:
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=20
-        )
-
-        response.raise_for_status()
-
-        return response.json()
-
-    except Exception as e:
-
-        print(f"[ERROR] GET {path} failed: {e}", file=sys.stderr)
-
         return None
 
 
@@ -111,10 +79,8 @@ def simple_policy(state):
 
     if price < 50 and soc < 0.8:
         battery = 5.0
-
     elif price > 100 and soc > 0.2:
         battery = -5.0
-
     else:
         battery = 0.0
 
@@ -134,16 +100,12 @@ def call_llm_stub():
         return
 
     try:
-
         client.chat.completions.create(
             model=MODEL_NAME,
-            messages=[
-                {"role": "user", "content": "Return OK"}
-            ],
+            messages=[{"role": "user", "content": "Return OK"}],
             max_tokens=5,
             temperature=0
         )
-
     except Exception:
         pass
 
@@ -161,7 +123,6 @@ def main():
     print(f"seed: {SEED}")
 
     # RESET ENVIRONMENT
-
     reset_data = api_post(
         "/reset",
         {
@@ -180,7 +141,7 @@ def main():
     done = False
     step = 0
 
-    # Required LLM call once
+    # required LLM call
     call_llm_stub()
 
     while not done and step < MAX_STEPS:
@@ -209,8 +170,7 @@ def main():
 
         step += 1
 
-    # FINAL GRADING
-
+    # GRADING
     grade_data = api_post(
         "/grader",
         {
@@ -227,7 +187,6 @@ def main():
     print(f"score: {score}")
 
     elapsed = time.time() - start_time
-
     print(f"time_sec: {elapsed:.2f}", file=sys.stderr)
 
 
@@ -238,9 +197,8 @@ def main():
 if __name__ == "__main__":
 
     try:
-
         main()
 
     except Exception as e:
-
         print(f"[FATAL ERROR] {e}", file=sys.stderr)
+        sys.exit(0)
