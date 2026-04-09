@@ -1,24 +1,20 @@
 [project]
 name = "microgrid-rl-env"
 version = "1.0.0"
-description = "OpenEnv Microgrid RL Environment"
-authors = [
-    { name = "Anirudh Patil" }
-]
+description = "Microgrid RL OpenEnv environment"
 readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
     "fastapi",
     "uvicorn",
-    "pydantic",
     "numpy",
+    "pydantic",
     "requests",
     "openai",
     "openenv-core>=0.2.0"
 ]
 
-# 🔥 THIS IS CRITICAL (you were missing this)
 [project.scripts]
 server = "server.app:app"
 
