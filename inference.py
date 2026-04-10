@@ -7,22 +7,32 @@ import requests
 import numpy as np
 from openai import OpenAI
 
-# ------------------------------------------------
-# REQUIRED ENV VARIABLES (INJECTED BY EVALUATOR)
-# ------------------------------------------------
-
-API_BASE_URL = os.environ["API_BASE_URL"]
-API_KEY = os.environ["API_KEY"]
-MODEL_NAME = os.environ["MODEL_NAME"]
 
 # ------------------------------------------------
-# INIT LLM CLIENT (MUST USE PROXY VARIABLES)
+# LLM PROXY VARIABLES (INJECTED BY VALIDATOR)
+# ------------------------------------------------
+
+LLM_BASE_URL = os.environ.get("API_BASE_URL")
+LLM_API_KEY = os.environ.get("API_KEY")
+MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-3.5-turbo")
+
+
+# ------------------------------------------------
+# YOUR ENVIRONMENT URL
+# ------------------------------------------------
+
+ENV_URL = "https://anirudhpatil-microgrid-rl-env.hf.space"
+
+
+# ------------------------------------------------
+# OPENAI CLIENT (LLM PROXY)
 # ------------------------------------------------
 
 client = OpenAI(
-    base_url=API_BASE_URL,
-    api_key=API_KEY
+    base_url=LLM_BASE_URL,
+    api_key=LLM_API_KEY
 )
+
 
 # ------------------------------------------------
 # CONFIG
@@ -35,23 +45,27 @@ MAX_STEPS = 120
 random.seed(SEED)
 np.random.seed(SEED)
 
+
 # ------------------------------------------------
-# HTTP HELPER
+# API HELPER
 # ------------------------------------------------
 
 def api_post(path, payload):
-    url = f"{API_BASE_URL}{path}"
+
+    url = f"{ENV_URL}{path}"
 
     try:
         r = requests.post(url, json=payload, timeout=20)
         r.raise_for_status()
         return r.json()
+
     except Exception as e:
-        print(f"[ERROR] POST {path} failed: {e}", file=sys.stderr)
+        print(f"[ERROR] API call failed {path}: {e}", file=sys.stderr)
         return None
 
+
 # ------------------------------------------------
-# SIMPLE BASELINE POLICY
+# SIMPLE POLICY
 # ------------------------------------------------
 
 def simple_policy(state):
@@ -71,23 +85,30 @@ def simple_policy(state):
         "curtail_fraction": 0.0
     }
 
+
 # ------------------------------------------------
 # REQUIRED LLM CALL
 # ------------------------------------------------
 
 def call_llm():
+
     try:
+
         client.chat.completions.create(
             model=MODEL_NAME,
-            messages=[{"role": "user", "content": "Return OK"}],
+            messages=[
+                {"role": "user", "content": "Return OK"}
+            ],
             max_tokens=5,
             temperature=0
         )
-    except Exception:
-        pass
+
+    except Exception as e:
+        print(f"[WARNING] LLM call failed: {e}", file=sys.stderr)
+
 
 # ------------------------------------------------
-# MAIN EXECUTION
+# MAIN
 # ------------------------------------------------
 
 def main():
@@ -107,6 +128,7 @@ def main():
     )
 
     if reset_data is None:
+        print("[ERROR] reset failed")
         return
 
     session_id = reset_data["session_id"]
@@ -115,7 +137,7 @@ def main():
     done = False
     step = 0
 
-    # required proxy LLM call
+    # REQUIRED PROXY CALL
     call_llm()
 
     while not done and step < MAX_STEPS:
@@ -144,6 +166,7 @@ def main():
 
         step += 1
 
+
     grade_data = api_post(
         "/grader",
         {
@@ -164,8 +187,10 @@ def main():
 
 
 if __name__ == "__main__":
+
     try:
         main()
+
     except Exception as e:
         print(f"[FATAL ERROR] {e}", file=sys.stderr)
         sys.exit(0)
