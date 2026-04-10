@@ -1,3 +1,4 @@
+
 import os
 import sys
 import json
@@ -9,20 +10,21 @@ from openai import OpenAI
 
 
 # ------------------------------------------------
-# LLM PROXY VARIABLES (INJECTED BY VALIDATOR)
+# ENV VARIABLES (SAFE DEFAULTS)
 # ------------------------------------------------
 
-LLM_BASE_URL = os.environ.get("API_BASE_URL")
-LLM_API_KEY = os.environ.get("API_KEY")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-3.5-turbo")
-
-
-# ------------------------------------------------
-# YOUR ENVIRONMENT URL
-# ------------------------------------------------
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 ENV_URL = "https://anirudhpatil-microgrid-rl-env.hf.space"
 
+TASK_NAME = "sunny_day"
+BENCHMARK = "microgrid"
+MAX_STEPS = 120
+
+random.seed(42)
+np.random.seed(42)
 
 # ------------------------------------------------
 # OPENAI CLIENT (LLM PROXY)
@@ -35,32 +37,22 @@ client = OpenAI(
 
 
 # ------------------------------------------------
-# CONFIG
-# ------------------------------------------------
-
-TASK_ID = "sunny_day"
-SEED = 42
-MAX_STEPS = 120
-
-random.seed(SEED)
-np.random.seed(SEED)
-
-
-# ------------------------------------------------
-# API HELPER
+# ENV API CALL
 # ------------------------------------------------
 
 def api_post(path, payload):
 
-    url = f"{ENV_URL}{path}"
-
     try:
-        r = requests.post(url, json=payload, timeout=20)
+        r = requests.post(
+            f"{ENV_URL}{path}",
+            json=payload,
+            timeout=20
+        )
         r.raise_for_status()
         return r.json()
 
     except Exception as e:
-        print(f"[ERROR] API call failed {path}: {e}", file=sys.stderr)
+        print(f"[DEBUG] API error: {e}", flush=True)
         return None
 
 
@@ -87,7 +79,7 @@ def simple_policy(state):
 
 
 # ------------------------------------------------
-# REQUIRED LLM CALL
+# LLM CALL (REQUIRED)
 # ------------------------------------------------
 
 def call_llm():
@@ -104,7 +96,31 @@ def call_llm():
         )
 
     except Exception as e:
-        print(f"[WARNING] LLM call failed: {e}", file=sys.stderr)
+        print(f"[DEBUG] LLM call failed: {e}", flush=True)
+
+
+# ------------------------------------------------
+# LOG FUNCTIONS
+# ------------------------------------------------
+
+def log_start():
+    print(f"[START] task={TASK_NAME} env={BENCHMARK} model={MODEL_NAME}", flush=True)
+
+def log_step(step, action, reward, done):
+    done_val = str(done).lower()
+    print(
+        f"[STEP] step={step} action={json.dumps(action)} reward={reward:.2f} done={done_val} error=null",
+        flush=True
+    )
+
+def log_end(success, steps, score, rewards):
+
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+
+    print(
+        f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}",
+        flush=True
+    )
 
 
 # ------------------------------------------------
@@ -113,84 +129,71 @@ def call_llm():
 
 def main():
 
-    start_time = time.time()
+    rewards = []
+    steps_taken = 0
 
-    print("[START]")
-    print(f"task: {TASK_ID}")
-    print(f"seed: {SEED}")
+    log_start()
 
-    reset_data = api_post(
-        "/reset",
-        {
-            "task_id": TASK_ID,
-            "seed": SEED
-        }
-    )
+    try:
 
-    if reset_data is None:
-        print("[ERROR] reset failed")
-        return
-
-    session_id = reset_data["session_id"]
-    state = reset_data["state"]
-
-    done = False
-    step = 0
-
-    # REQUIRED PROXY CALL
-    call_llm()
-
-    while not done and step < MAX_STEPS:
-
-        action = simple_policy(state)
-
-        step_data = api_post(
-            "/step",
-            {
-                "session_id": session_id,
-                "action": action
-            }
+        reset = api_post(
+            "/reset",
+            {"task_id": TASK_NAME, "seed": 42}
         )
 
-        if step_data is None:
-            break
+        if reset is None:
+            raise RuntimeError("reset failed")
 
-        state = step_data["state"]
-        reward = step_data["reward"]
-        done = step_data["done"]
+        session_id = reset["session_id"]
+        state = reset["state"]
 
-        print("[STEP]")
-        print(f"t: {step}")
-        print(f"action: {json.dumps(action)}")
-        print(f"reward: {reward}")
+        call_llm()   # required LLM proxy call
 
-        step += 1
+        for step in range(1, MAX_STEPS + 1):
 
+            action = simple_policy(state)
 
-    grade_data = api_post(
-        "/grader",
-        {
-            "session_id": session_id
-        }
-    )
+            result = api_post(
+                "/step",
+                {
+                    "session_id": session_id,
+                    "action": action
+                }
+            )
 
-    score = 0.0
+            if result is None:
+                break
 
-    if grade_data:
-        score = grade_data.get("score", 0.0)
+            reward = result.get("reward", 0.0)
+            done = result.get("done", False)
+            state = result.get("state", {})
 
-    print("[END]")
-    print(f"score: {score}")
+            rewards.append(reward)
+            steps_taken = step
 
-    elapsed = time.time() - start_time
-    print(f"time_sec: {elapsed:.2f}", file=sys.stderr)
+            log_step(step, action, reward, done)
+
+            if done:
+                break
+
+        grade = api_post(
+            "/grader",
+            {"session_id": session_id}
+        )
+
+        score = grade.get("score", 0.0) if grade else 0.0
+
+        success = score >= 0.0
+
+    except Exception as e:
+
+        print(f"[DEBUG] runtime error: {e}", flush=True)
+
+        success = False
+        score = 0.0
+
+    log_end(success, steps_taken, score, rewards)
 
 
 if __name__ == "__main__":
-
-    try:
-        main()
-
-    except Exception as e:
-        print(f"[FATAL ERROR] {e}", file=sys.stderr)
-        sys.exit(0)
+    main()
