@@ -106,34 +106,25 @@ def health():
 # RESET (OPENENV VALIDATOR FIX)
 # ─────────────────────────────────────────────
 
-@app.post("/reset", response_model=ResetResponse)
-def reset(body: Optional[dict] = Body(default=None)):
+@app.post("/grader", response_model=GradeResult)
+def grader(req: GraderRequest):
 
-    # allow POST with no body
-    if body is None:
-        task_id = _default_task_id()
-        seed = 42
-    else:
-        task_id = body.get("task_id", _default_task_id())
-        seed = body.get("seed", 42)
+    env = env_store.get(req.session_id)
 
-    try:
-        config = load_task(task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    if env is None:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    env = MicrogridEnv(config)
-    state = env.reset(seed=seed)
+    if not env.done:
+        raise HTTPException(status_code=400, detail="Episode not complete")
 
-    session_id = f"{task_id}_{seed}_{uuid.uuid4().hex[:6]}"
-    _add_session(session_id, env)
+    trajectory = env.get_trajectory()
 
-    return ResetResponse(
-        session_id=session_id,
-        state=state,
-        task_info=config.summary(),
-    )
+    result = grade(trajectory, env.config)
 
+    # ensure task-specific grading
+    result.breakdown["task_id"] = env.config.task_id
+
+    return result
 
 @app.get("/reset", response_model=ResetResponse)
 def reset_get(task_id: Optional[str] = None, seed: int = 42):
