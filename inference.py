@@ -1,3 +1,4 @@
+
 import os
 import sys
 import json
@@ -18,19 +19,12 @@ API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 ENV_URL = "https://anirudhpatil-microgrid-rl-env.hf.space"
 
+TASK_NAME = "sunny_day"
 BENCHMARK = "microgrid"
-
-TASKS = [
-    "sunny_day",
-    "volatile_market",
-    "islanded_crisis"
-]
-
 MAX_STEPS = 120
 
 random.seed(42)
 np.random.seed(42)
-
 
 # ------------------------------------------------
 # OPENAI CLIENT (LLM PROXY)
@@ -54,9 +48,7 @@ def api_post(path, payload):
             json=payload,
             timeout=20
         )
-
         r.raise_for_status()
-
         return r.json()
 
     except Exception as e:
@@ -87,7 +79,7 @@ def simple_policy(state):
 
 
 # ------------------------------------------------
-# REQUIRED LLM CALL
+# LLM CALL (REQUIRED)
 # ------------------------------------------------
 
 def call_llm():
@@ -108,22 +100,18 @@ def call_llm():
 
 
 # ------------------------------------------------
-# LOGGING FUNCTIONS
+# LOG FUNCTIONS
 # ------------------------------------------------
 
-def log_start(task):
-    print(f"[START] task={task} env={BENCHMARK} model={MODEL_NAME}", flush=True)
-
+def log_start():
+    print(f"[START] task={TASK_NAME} env={BENCHMARK} model={MODEL_NAME}", flush=True)
 
 def log_step(step, action, reward, done):
-
     done_val = str(done).lower()
-
     print(
         f"[STEP] step={step} action={json.dumps(action)} reward={reward:.2f} done={done_val} error=null",
         flush=True
     )
-
 
 def log_end(success, steps, score, rewards):
 
@@ -136,24 +124,21 @@ def log_end(success, steps, score, rewards):
 
 
 # ------------------------------------------------
-# RUN SINGLE TASK
+# MAIN
 # ------------------------------------------------
 
-def run_task(task_name):
+def main():
 
     rewards = []
     steps_taken = 0
 
-    log_start(task_name)
+    log_start()
 
     try:
 
         reset = api_post(
             "/reset",
-            {
-                "task_id": task_name,
-                "seed": 42
-            }
+            {"task_id": TASK_NAME, "seed": 42}
         )
 
         if reset is None:
@@ -162,7 +147,7 @@ def run_task(task_name):
         session_id = reset["session_id"]
         state = reset["state"]
 
-        call_llm()
+        call_llm()   # required LLM proxy call
 
         for step in range(1, MAX_STEPS + 1):
 
@@ -193,9 +178,7 @@ def run_task(task_name):
 
         grade = api_post(
             "/grader",
-            {
-                "session_id": session_id
-            }
+            {"session_id": session_id}
         )
 
         score = grade.get("score", 0.0) if grade else 0.0
@@ -210,17 +193,6 @@ def run_task(task_name):
         score = 0.0
 
     log_end(success, steps_taken, score, rewards)
-
-
-# ------------------------------------------------
-# MAIN
-# ------------------------------------------------
-
-def main():
-
-    for task in TASKS:
-
-        run_task(task)
 
 
 if __name__ == "__main__":
